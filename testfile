@@ -1,0 +1,68 @@
+export default class CypherQueryBuilder {
+    static search(s: string, n: number, industry = 'All', country = 'All'): string {
+        const searchFilter = s !== '' 
+            ? `(n.uri = '${s}' OR n.label =  '${s}')` 
+            : `(n.uri =~ '(?i).*${s}.*' OR n.label =~ '(?i).*${s}.*')`;
+
+        const industryFilter = industry !== 'All' 
+            ? `AND (n.industry = '${industry}' OR m.industry = '${industry}')` 
+            : '';
+
+        const countryFilter = country !== 'All' 
+            ? `AND (n.country = '${country}' OR m.country = '${country}')` 
+            : '';
+
+        return `
+            MATCH p = shortestPath((n)-[*]-(m))
+            WHERE n <> m AND ${searchFilter}
+            ${industryFilter}
+            ${countryFilter}
+            WITH p ORDER BY length(p) ASC
+            WHERE length(p) <= ${n}
+            UNWIND nodes(p) as n
+            UNWIND relationships(p) as r
+            RETURN n, r
+        `;
+    }
+
+    static nodes: string = `MATCH(n) RETURN n.label ORDER BY n.label`;
+
+    static industries: string = `MATCH(n) WHERE n.industry IS NOT NULL RETURN DISTINCT n.industry`;
+
+    static countries: string = `MATCH(n) WHERE n.country IS NOT NULL RETURN DISTINCT n.country ORDER BY n.country`;
+
+    static getNodeById(id: number): string {
+        return `MATCH (n) WHERE id(n) = ${id} RETURN n`;
+    }
+
+    static getNeighborsPointingTo(uri: string, clientType = ''): string {
+        const direction = clientType.toUpperCase() === 'PAYABLES' 
+            ? '->' 
+            : clientType.toUpperCase() === 'RECEIVABLES' 
+            ? '<-' 
+            : '-[]-';
+
+        return `MATCH (m)${direction}(n) WHERE n.uri = '${uri}' RETURN m`;
+    }
+
+    static getCommonNeighborsPointingTo(entityUri: string, entityClientType: string, entityBUri: string, entityBClientType: string): string {
+        const direction1 = entityClientType.toUpperCase() === 'PAYABLES' 
+            ? '->' 
+            : entityClientType.toUpperCase() === 'RECEIVABLES' 
+            ? '<-' 
+            : '-[]-';
+
+        const direction2 = entityBClientType.toUpperCase() === 'PAYABLES' 
+            ? '->' 
+            : entityBClientType.toUpperCase() === 'RECEIVABLES' 
+            ? '<-' 
+            : '-[]-';
+
+        return `
+            MATCH (m1)${direction1}(n1) WHERE n1.uri = '${entityUri}'
+            WITH collect(m1) AS m1s
+            MATCH (m2)${direction2}(n2) WHERE n2.uri = '${entityBUri}' AND m2 in m1s
+            RETURN m2
+        `;
+    }
+}
